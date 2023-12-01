@@ -1,5 +1,5 @@
 fn main() {
-    let input = include_str!("../../inputs/day1.txt");
+    let input = include_str!("../inputs/day1.txt");
     
     let mut calibration_sum = 0;
     for line in input.lines() {
