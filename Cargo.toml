@@ -8,4 +8,5 @@ name = "day1"
 path = "src/day1/main.rs"
 
 [dependencies]
+nom = "7.1"
 
