@@ -1,4 +1,6 @@
-use pom::utf8::{Parser, one_of, sym, seq, list};
+#![feature(trait_alias)]
+
+use chumsky::prelude::*;
 
 #[derive(Debug, Clone, Copy)]
 struct Set {
@@ -7,42 +9,45 @@ struct Set {
 	b: u32,
 }
 impl Set {
-	fn add(self, s2: Set) -> Set {
-		Set { r: self.r + s2.r, g: self.g + s2.g, b: self.b + s2.b }
-	}
 	fn max(self, s2: Set) -> Set {
 		Set { r: self.r.max(s2.r), g: self.g.max(s2.g), b: self.b.max(s2.b) }
 	}
 }
+
 #[derive(Debug)]
 struct Game {
 	id: u32,
 	sets: Vec<Set>,
 }
 
-fn int<'a>() -> Parser<'a, u32> {
-	one_of("0123456789").repeat(1..).collect()
-		.convert(str::parse::<u32>)
-}
-fn game<'a>() -> Parser<'a, Game> {
-	let group = (int() - sym(' ') + (seq("red") | seq("green") | seq("blue")))
-		.map(|(cnt, col)| match col {
-			"red" => Set { r: cnt, g: 0, b: 0 },
-			"green" => Set { r: 0, g: cnt, b: 0 },
-			"blue" => Set { r: 0, g: 0, b: cnt },
-			_ => unreachable!()
-		});
-	let set = list(group, seq(", "))
-		.map(|groups| groups.iter().copied().reduce(|g1,g2| g1.add(g2)).unwrap());
-	(seq("Game ") * int() - seq(": ") + list(set, seq("; ")))
-		.map(|(id, sets)| Game { id, sets })
+trait MyParser<T> = Parser<char, T, Error = Simple<char>>;
+
+fn game() -> impl MyParser<Game> {
+	let int = text::int(10).from_str().unwrapped();
+	just("Game ").ignore_then(int).then_ignore(just(": ")).then(
+		int.then_ignore(just(" ")).then(just("red").or(just("green")).or(just("blue")))
+			.separated_by(just(", ")).at_least(1)
+			.map(|groups| {
+				let mut set = Set { r: 0, g: 0, b: 0 };
+				for (cnt, col) in groups {
+					match col {
+						"red"   => set.r += cnt,
+						"green" => set.g += cnt,
+						"blue"  => set.b += cnt,
+						_ => unreachable!()
+					}
+				}
+				set
+			})
+			.separated_by(just("; ")).at_least(1)
+	).map(|(id, sets)| Game { id, sets })
 }
 
 fn main() {
 	let input = include_str!("../inputs/day2.txt");
 	let mut games = vec![];
 	for line in input.lines() {
-		games.push(game().parse_str(line).unwrap());
+		games.push(game().parse(line).unwrap());
 	}
 
 	let mut id_sum = 0;
