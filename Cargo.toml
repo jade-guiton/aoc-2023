@@ -11,5 +11,5 @@ name = "day2"
 path = "src/day2.rs"
 
 [dependencies]
-nom = "7.1"
+pom = { git = "https://github.com/J-F-Liu/pom" }
 

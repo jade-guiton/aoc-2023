@@ -1,77 +1,63 @@
-use nom::{
-    multi::separated_list1,
-    bytes::complete::tag,
-    character::complete::{digit1, char},
-    sequence::{delimited, separated_pair},
-    combinator::{map_res, map, all_consuming},
-    IResult, branch::alt
-};
+use pom::utf8::{Parser, one_of, sym, seq, list};
 
 #[derive(Debug, Clone, Copy)]
 struct Set {
-    r: u32,
-    g: u32,
-    b: u32,
+	r: u32,
+	g: u32,
+	b: u32,
+}
+impl Set {
+	fn add(self, s2: Set) -> Set {
+		Set { r: self.r + s2.r, g: self.g + s2.g, b: self.b + s2.b }
+	}
+	fn max(self, s2: Set) -> Set {
+		Set { r: self.r.max(s2.r), g: self.g.max(s2.g), b: self.b.max(s2.b) }
+	}
 }
 #[derive(Debug)]
 struct Game {
-    id: u32,
-    sets: Vec<Set>,
+	id: u32,
+	sets: Vec<Set>,
 }
 
-fn parse_line(rst: &str) -> IResult<&str, Game> {
-    let (rst, id) = delimited(
-        tag("Game "),
-        map_res(digit1, str::parse),
-        tag(": ")
-    )(rst)?;
-    let (rst, sets) = separated_list1(tag("; "),
-        map(separated_list1(tag(", "), separated_pair(
-            map_res(digit1, str::parse),
-            char(' '),
-            alt((
-                tag("red"),
-                tag("green"),
-                tag("blue")
-            ))
-        )), |parts: Vec<(u32, &str)>| {
-            let mut set = Set { r: 0, g: 0, b: 0 };
-            for (cnt, col) in parts {
-                match col {
-                    "red" => set.r += cnt,
-                    "green" => set.g += cnt,
-                    "blue" => set.b += cnt,
-                    _ => unreachable!()
-                }
-            }
-            set
-        })
-    )(rst)?;
-    Ok((rst, Game { id, sets }))
+fn int<'a>() -> Parser<'a, u32> {
+	one_of("0123456789").repeat(1..).collect()
+		.convert(str::parse::<u32>)
+}
+fn game<'a>() -> Parser<'a, Game> {
+	let group = (int() - sym(' ') + (seq("red") | seq("green") | seq("blue")))
+		.map(|(cnt, col)| match col {
+			"red" => Set { r: cnt, g: 0, b: 0 },
+			"green" => Set { r: 0, g: cnt, b: 0 },
+			"blue" => Set { r: 0, g: 0, b: cnt },
+			_ => unreachable!()
+		});
+	let set = list(group, seq(", "))
+		.map(|groups| groups.iter().copied().reduce(|g1,g2| g1.add(g2)).unwrap());
+	(seq("Game ") * int() - seq(": ") + list(set, seq("; ")))
+		.map(|(id, sets)| Game { id, sets })
 }
 
 fn main() {
 	let input = include_str!("../inputs/day2.txt");
-    let mut games = vec![];
-    for line in input.lines() {
-        games.push(all_consuming(parse_line)(line).unwrap().1);
-    }
+	let mut games = vec![];
+	for line in input.lines() {
+		games.push(game().parse_str(line).unwrap());
+	}
 
-    let mut id_sum = 0;
-    for game in &games {
-        if game.sets.iter().all(|s| s.r <= 12 && s.g <= 13 && s.b <= 14) {
-            id_sum += game.id;
-        }
-    }
-    println!("part 1: {}", id_sum);
+	let mut id_sum = 0;
+	for game in &games {
+		if game.sets.iter().all(|s| s.r <= 12 && s.g <= 13 && s.b <= 14) {
+			id_sum += game.id;
+		}
+	}
+	println!("part 1: {}", id_sum);
 
-    let mut power_sum = 0;
-    for game in games {
-        let min_cubes = game.sets.iter().copied().reduce(|s1, s2|
-            Set { r: s1.r.max(s2.r), g: s1.g.max(s2.g), b: s1.b.max(s2.b) }
-        ).unwrap();
-        let power = min_cubes.r * min_cubes.g * min_cubes.b;
-        power_sum += power;
-    }
-    println!("part 2: {}", power_sum);
+	let mut power_sum = 0;
+	for game in games {
+		let min_cubes = game.sets.iter().copied().reduce(|s1, s2| s1.max(s2)).unwrap();
+		let power = min_cubes.r * min_cubes.g * min_cubes.b;
+		power_sum += power;
+	}
+	println!("part 2: {}", power_sum);
 }
