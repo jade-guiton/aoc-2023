@@ -18,6 +18,9 @@ path = "src/day4.rs"
 [[bin]]
 name = "day5"
 path = "src/day5.rs"
+[[bin]]
+name = "day6"
+path = "src/day6.rs"
 
 [dependencies]
 chumsky = "0.9.3"
