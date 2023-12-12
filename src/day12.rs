@@ -1,6 +1,6 @@
 use std::collections::HashMap;
 
-struct Counter<'a> {
+struct Solver<'a> {
 	ng_mask: u128,
 	pot_mask: u128,
 	groups: &'a [u8],
@@ -8,19 +8,9 @@ struct Counter<'a> {
 	debug: bool,
 }
 
-impl<'a> Counter<'a> {
-	fn count_arrangements_from(&mut self, mut col_off: u32, grp_off: u32) -> u64 {
-		if grp_off == self.groups.len() as u32 {
-			return if self.ng_mask >> col_off == 0 { 1 } else { 0 };
-		}
-		let mut pot_mask = self.pot_mask >> col_off;
-		if pot_mask == 0 {
-			return 0;
-		}
-		let skip = pot_mask.trailing_zeros();
-		pot_mask >>= skip;
-		col_off += skip;
-		
+impl<'a> Solver<'a> {
+	fn count_arrangements_from(&mut self, col_off: u32, grp_off: u32) -> u64 {
+		let pot_mask = self.pot_mask >> col_off;
 		let intv_len = pot_mask.trailing_ones();
 		if self.debug {
 			println!("intv_len: {}", intv_len);
@@ -45,7 +35,14 @@ impl<'a> Counter<'a> {
 		arr_cnt
 	}
 	
-	fn count_arrangements_from_cached(&mut self, col_off: u32, grp_off: u32) -> u64 {
+	fn count_arrangements_from_cached(&mut self, mut col_off: u32, grp_off: u32) -> u64 {
+		if grp_off == self.groups.len() as u32 {
+			return if self.ng_mask >> col_off == 0 { 1 } else { 0 };
+		}
+		let pot_mask = self.pot_mask >> col_off;
+		if pot_mask == 0 { return 0; }
+		col_off += pot_mask.trailing_zeros();
+		
 		if let Some(res) = self.cache.get(&(col_off, grp_off)) {
 			*res
 		} else {
@@ -69,7 +66,7 @@ impl<'a> Counter<'a> {
 			println!("  groups: {:?},", groups);
 			println!(")");
 		}
-		Counter {
+		Solver {
 			ng_mask,
 			pot_mask: ng_mask | na_mask,
 			groups,
@@ -97,7 +94,7 @@ fn main() {
 				},
 				_ => unreachable!()
 			}
-		};
+		}
 		let row_len = row_len.unwrap();
 		let mut groups = vec![];
 		for group_str in line[row_len+1..].split(',') {
@@ -108,7 +105,7 @@ fn main() {
 	
 	let mut arr_cnt_sum = 0;
 	for (ng_mask, na_mask, groups, _) in records.iter() {
-		arr_cnt_sum += Counter::count_arrangements(*ng_mask, *na_mask, groups, false);
+		arr_cnt_sum += Solver::count_arrangements(*ng_mask, *na_mask, groups, false);
 	}
 	println!("part 1: {}", arr_cnt_sum);
 	
@@ -124,7 +121,7 @@ fn main() {
 			groups_ext.extend_from_slice(&groups);
 		}
 		
-		arr_cnt_sum += Counter::count_arrangements(ng_mask_ext, na_mask_ext, &groups_ext, false);
+		arr_cnt_sum += Solver::count_arrangements(ng_mask_ext, na_mask_ext, &groups_ext, false);
 	}
 	println!("part 2: {}", arr_cnt_sum);
 }
