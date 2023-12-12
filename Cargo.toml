@@ -43,3 +43,5 @@ path = "src/day12.rs"
 [dependencies]
 chumsky = "0.9.3"
 
+[profile.dev]
+opt-level = 2
