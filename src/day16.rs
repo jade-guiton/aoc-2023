@@ -1,23 +1,4 @@
-struct Grid<T> {
-	width: usize,
-	data: Box<[T]>,
-}
-impl<T: Clone> Grid<T> {
-	fn new(w: usize, h: usize, val: T) -> Self {
-		Self { width: w, data: vec![val; w*h].into_boxed_slice() }
-	}
-}
-impl<T> std::ops::Index<(usize, usize)> for Grid<T> {
-	type Output = T;
-	fn index(&self, index: (usize, usize)) -> &Self::Output {
-		&self.data[index.0 + index.1 * self.width]
-	}
-}
-impl<T> std::ops::IndexMut<(usize, usize)> for Grid<T> {
-	fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
-		&mut self.data[index.0 + index.1 * self.width]
-	}
-}
+use util::Grid;
 
 #[derive(Clone)]
 enum Tile {
@@ -53,7 +34,7 @@ impl BeamSet {
 	}
 }
 
-fn count_energized(w: usize, h: usize, tiles: &Grid::<Tile>, beam: Beam) -> u32 {
+fn count_energized(w: i32, h: i32, tiles: &Grid::<Tile>, beam: Beam) -> u32 {
 	let mut beams = Grid::<BeamSet>::new(w, h, BeamSet::EMPTY);
 	let mut beam_fronts = vec![beam];
 	while !beam_fronts.is_empty() {
@@ -64,7 +45,7 @@ fn count_energized(w: usize, h: usize, tiles: &Grid::<Tile>, beam: Beam) -> u32 
 				beam_fronts.remove(i);
 				continue;
 			}
-			let pos = (beam.x as usize, beam.y as usize);
+			let pos = (beam.x as i32, beam.y as i32);
 			if beams[pos].has_dir(beam.dx, beam.dy) {
 				beam_fronts.remove(i);
 				continue;
@@ -106,22 +87,15 @@ fn count_energized(w: usize, h: usize, tiles: &Grid::<Tile>, beam: Beam) -> u32 
 
 fn main() {
 	let input = include_bytes!("../inputs/day16.txt");
-	let w = input.iter().position(|c| *c == b'\n').unwrap();
-	let h = (input.len() + 1) / (w + 1);
-	let mut tiles = Grid::<Tile>::new(w, h, Tile::Empty);
-	for (y, line) in input.split(|c| *c == b'\n').enumerate() {
-		if line.len() == 0 { continue; }
-		for (x, c) in line.iter().enumerate() {
-			tiles[(x, y)] = match c {
-				b'.' => Tile::Empty,
-				b'/' => Tile::MirrorSlash,
-				b'\\' => Tile::MirrorBackslash,
-				b'-' => Tile::SplitterHor,
-				b'|' => Tile::SplitterVer,
-				_ => unreachable!(),
-			};
-		}
-	}
+	let tiles = Grid::load_from_bytes(input, |c,_,_| match c {
+		b'.' => Tile::Empty,
+		b'/' => Tile::MirrorSlash,
+		b'\\' => Tile::MirrorBackslash,
+		b'-' => Tile::SplitterHor,
+		b'|' => Tile::SplitterVer,
+		_ => unreachable!(),
+	});
+	let (w, h) = (tiles.width, tiles.height);
 	
 	println!("part 1: {}", count_energized(w, h, &tiles, Beam { x: 0, y: 0, dx: 1, dy: 0 }));
 	

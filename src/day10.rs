@@ -1,29 +1,5 @@
-use std::{ops::{IndexMut, Index}, collections::{HashSet, VecDeque}};
-
-struct Grid<T> {
-	width: usize,
-	data: Box<[T]>,
-}
-impl<T: Default> Grid<T> {
-	fn new_default(width: usize, height: usize) -> Self {
-		let mut data = vec![];
-		for _ in 0..width*height {
-			data.push(Default::default());
-		}
-		Self { width, data: data.into_boxed_slice() }
-	}
-}
-impl<T> Index<(usize, usize)> for Grid<T> {
-	type Output = T;
-	fn index(&self, index: (usize, usize)) -> &Self::Output {
-		&self.data[index.0 + index.1 * self.width]
-	}
-}
-impl<T> IndexMut<(usize, usize)> for Grid<T> {
-	fn index_mut(&mut self, index: (usize, usize)) -> &mut Self::Output {
-		&mut self.data[index.0 + index.1 * self.width]
-	}
-}
+use util::Grid;
+use std::collections::{HashSet, VecDeque};
 
 const TILE_N: u8 = 0b0001;
 const TILE_E: u8 = 0b0010;
@@ -35,32 +11,27 @@ fn invert_tile(t: u8) -> u8 {
 }
 
 fn main() {
-	let input = include_str!("../inputs/day10.txt");
-	let width = input.lines().next().unwrap().len();
-	let height = (input.len() + 1) / (width + 1);
-	let mut grid = Grid::<u8>::new_default(width, height);
+	let input = include_bytes!("../inputs/day10.txt");
 	let mut start = None;
-	for (y, line) in input.lines().enumerate() {
-		for (x, c) in line.chars().enumerate() {
-			grid[(x, y)] = match c {
-				'.' => 0,
-				'|' => TILE_N | TILE_S,
-				'-' => TILE_E | TILE_W,
-				'L' => TILE_N | TILE_E,
-				'J' => TILE_N | TILE_W,
-				'7' => TILE_S | TILE_W,
-				'F' => TILE_E | TILE_S,
-				'S' => {
-					assert!(start.is_none());
-					start = Some((x, y));
-					0
-				},
-				_ => unreachable!()
-			};
-		}
-	}
+	let mut grid = Grid::load_from_bytes(input, |c, x, y| match c {
+		b'.' => 0,
+		b'|' => TILE_N | TILE_S,
+		b'-' => TILE_E | TILE_W,
+		b'L' => TILE_N | TILE_E,
+		b'J' => TILE_N | TILE_W,
+		b'7' => TILE_S | TILE_W,
+		b'F' => TILE_E | TILE_S,
+		b'S' => {
+			assert!(start.is_none());
+			start = Some((x, y));
+			0
+		},
+		_ => unreachable!()
+	});
+	let (width, height) = (grid.width, grid.height);
 	let start = start.unwrap();
 	let (start_x, start_y) = start;
+	
 	grid[start] = invert_tile(
 		  (grid[(start_x, start_y-1)] & TILE_S)
 		| (grid[(start_x+1, start_y)] & TILE_W)
