@@ -1,163 +1,156 @@
-use std::{collections::{HashMap, VecDeque}, cell::RefCell};
+use std::collections::HashMap;
 
 use chumsky::prelude::*;
 
 #[derive(PartialEq, Eq, Debug)]
 enum NodeType {
-	Broadcaster,
-	Conjunction(u8, u8),
+	Input,
+	Nand,
 	Flipflop,
 	Output,
 }
 #[derive(Debug)]
 struct Node {
+	id: String,
 	ty: NodeType,
-	st: bool,
-	out: Vec<u16>,
+	out: Vec<String>,
 }
 
-fn parse_letter(c: char) -> u16 {
-	c as u16 - 'a' as u16
+fn parse_node_name() -> impl Parser<char, String, Error=Simple<char>> {
+	filter(|c| ('a'..='z').contains(c)).repeated().at_least(1).collect()
 }
-fn parse_node_name() -> impl Parser<char, u16, Error=Simple<char>> {
-	filter(|c| ('a'..='z').contains(c)).repeated().exactly(2)
-		.map(|n| {
-			if n == ['r','x'] {
-				1
-			} else {
-				parse_letter(n[0]) * 26 + parse_letter(n[1]) + 2
-			}
-		})
-}
-
-fn parse_node() -> impl Parser<char, (u16, Node), Error=Simple<char>> {
+fn parse_node() -> impl Parser<char, Node, Error=Simple<char>> {
 	choice((
-		just("broadcaster").map(|_| (NodeType::Broadcaster, 0)),
+		just("broadcaster").map(|_| (NodeType::Input, "broadcaster".to_owned())),
 		one_of("%&").map(|c| match c {
 			'%' => NodeType::Flipflop,
-			'&' => NodeType::Conjunction(0, 0),
+			'&' => NodeType::Nand,
 			_ => unreachable!()
 		}).then(parse_node_name())
 	)).then_ignore(just(" -> ")).then(
 		parse_node_name().separated_by(just(", "))
-	).map(|((ty, id), out)| (id, Node { ty, st: false, out }))
-}
-
-enum SimResult {
-	OutputTriggered,
-	Finished { lo: usize, hi: usize },
-}
-
-fn press_button(nodes: &mut [Node]) -> SimResult {
-	let mut lo_pulses = 0;
-	let mut hi_pulses = 0;
-	let mut pulses = VecDeque::new();
-	pulses.push_back((0, false, false)); // broadcast
-	lo_pulses += 1;
-	while let Some((id, prev_val, val)) = pulses.pop_front() {
-		let node = &mut nodes[id as usize];
-		let mut new_st = None;
-		match &mut node.ty {
-			NodeType::Broadcaster => new_st = Some(false),
-			NodeType::Output => {
-				if val == false {
-					return SimResult::OutputTriggered;
-				}
-			},
-			NodeType::Conjunction(ctr, max) => {
-				if val > prev_val {
-					*ctr += 1;
-				} else if val < prev_val {
-					*ctr -= 1;
-				}
-				new_st = Some(*ctr < *max);
-			},
-			NodeType::Flipflop => {
-				if !val {
-					new_st = Some(!node.st);
-				}
-			}
-		}
-		if let Some(new_st) = new_st {
-			for id2 in &node.out {
-				//println!("{} -> {} ({})", node_name(id), node_name(*id2), if new_st { "hi" } else { "lo" });
-				pulses.push_back((*id2, node.st, new_st));
-			}
-			if new_st {
-				hi_pulses += node.out.len();
-			} else {
-				lo_pulses += node.out.len();
-			}
-			node.st = new_st;
-		}
-	}
-	SimResult::Finished { lo: lo_pulses, hi: hi_pulses }
+	).map(|((ty, id), out)| Node { id, ty, out })
 }
 
 fn main() {
 	let input = include_str!("../inputs/day20.txt");
 	let mut nodes = HashMap::new();
 	for line in input.lines() {
-		let (id, node) = parse_node().parse(line).unwrap();
-		nodes.insert(id, RefCell::new(node));
+		let node = parse_node().parse(line).unwrap();
+		nodes.insert(node.id.clone(), node);
 	}
-	nodes.insert(1, RefCell::new(Node { ty: NodeType::Output, st: false, out: vec![] }));
+	nodes.insert("rx".to_owned(), Node { id: "rx".to_owned(), ty: NodeType::Output, out: vec![] });
 	
-	for node in nodes.values() {
-		let node = node.borrow();
-		for id2 in &node.out {
-			let mut node2 = nodes.get(&id2).map(|n| n.borrow_mut()).unwrap();
-			if let NodeType::Conjunction(_ctr, max) = &mut node2.ty {
-				*max += 1;
-			}
-		}
-	}
+	// Check that input has the expected structure:
 	
-	let mut node_ids: Vec<u16> = nodes.keys().copied().collect();
-	node_ids.sort();
-	let mut nodes = {
-		let mut nodes_vec = vec![];
-		for id in &node_ids {
-			let mut node = nodes.remove(&id).unwrap().into_inner();
-			for id2 in &mut node.out {
-				*id2 = node_ids.iter().position(|id3| id3 == id2).unwrap() as u16;
-			}
-			nodes_vec.push(node);
-		}
-		nodes_vec
+	// The output is driven by a single NAND gate
+	let final_nand_id = {
+		let final_nodes: Vec<&Node> = nodes.values()
+			.filter(|n| n.out.contains(&"rx".to_owned())).collect();
+		assert!(final_nodes.len() == 1);
+		let final_node = final_nodes[0];
+		assert!(final_node.ty == NodeType::Nand);
+		assert!(final_node.out.len() == 1);
+		final_node.id.clone()
 	};
 	
-	let mut lo_pulses = 0;
-	let mut hi_pulses = 0;
+	// Broadcaster is connected to multiple binary counters (flip-flop chains)
+	let mut ctr_moduli = vec![];
+	for mut ff_id in &nodes.get("broadcaster").unwrap().out {
+		let mut ff = nodes.get(ff_id).unwrap();
+		// The first flip flop always outputs to a NAND
+		let nand_id = {
+			let nands: Vec<String> = ff.out.iter()
+				.filter(|id| nodes.get(*id).unwrap().ty == NodeType::Nand)
+				.cloned()
+				.collect();
+			assert!(nands.len() == 1);
+			nands.into_iter().next().unwrap()
+		};
+		let nand = nodes.get(&nand_id).unwrap();
+		// The chain is made of 12 flip-flops forming a binary counter
+		let mut ctr_modulus: u16 = 0;
+		let mut nand_outputs = vec![];
+		for i in 0..12 {
+			assert!(ff.ty == NodeType::Flipflop);
+			// The flip-flops may output to the NAND, or the NAND may output to it
+			let to_nand = ff.out.iter().any(|id| *id == nand_id);
+			let from_nand = nand.out.iter().any(|id| id == ff_id);
+			if i == 0 {
+				assert!(from_nand && to_nand); // The first flip-flop has both links
+			} else {
+				assert!(from_nand ^ to_nand); // The others have exactly one
+			}
+			if to_nand {
+				ctr_modulus |= 1 << i; // Store a 1 bit
+			}
+			if from_nand {
+				nand_outputs.push(ff_id);
+			}
+			if i == 11 { // Last flip-flop
+				assert!(ff.out.len() == if to_nand { 1 } else { 0 }); // Nothing after it
+			} else {
+				assert!(ff.out.len() == if to_nand { 2 } else { 1 }); // Another flip-flop after it
+				ff_id = ff.out.iter().find(|id| **id != nand_id).unwrap();
+				ff = nodes.get(ff_id).unwrap();
+			}
+		}
+		// Besides the ones already checked, the NAND has one more output
+		assert!(nand.out.len() == 1 + nand_outputs.len());
+		let nand2_id = nand.out.iter().find(|id| !nand_outputs.contains(id)).unwrap();
+		// That output is another NAND, acting as an inverter, connected to the final NAND
+		let nand2 = nodes.get(nand2_id).unwrap();
+		assert!(nand2.ty == NodeType::Nand);
+		assert!(nand2.out.len() == 1);
+		assert!(nand2.out[0] == final_nand_id);
+		
+		// The bit pattern we extracted is the period/modulus of this binary counter
+		ctr_moduli.push(ctr_modulus);
+	}
+	
+	// Based on this structure, we can calculate the number of pulses generated
+	// for each button press.
+	
+	// No chance at a counter reset within 1000 button presses
+	assert!(ctr_moduli.iter().all(|ctr_mod| *ctr_mod > 1000));
+	
+	let ctr_nb = ctr_moduli.len();
+	let mut ctr_vals: Vec<u16> = vec![0; ctr_nb];
+	let mut pulses = [0, 0];
 	for _ in 0..1000 {
-		if let SimResult::Finished { lo, hi } = press_button(&mut nodes) {
-			lo_pulses += lo;
-			hi_pulses += hi;
-		} else {
-			unreachable!();
+		pulses[0] += 1; // From button to broadcaster
+		
+		for ctr_i in 0..ctr_nb {
+			let ctr_mod = ctr_moduli[ctr_i];
+			let val = &mut ctr_vals[ctr_i];
+			
+			pulses[0] += 1; // From broadcaster
+			
+			let carries = val.trailing_ones();
+			let mut nand_updates = 0;
+			for ff_i in 0..=carries {
+				let out = if ff_i < carries { 0 } else { 1 };
+				if (ctr_mod >> ff_i) & 1 == 1 { // If outputs to NAND
+					pulses[out] += 1; // From FF to NAND
+					nand_updates += 1;
+				}
+				if ff_i < 11 { // Not last in chain
+					pulses[out] += 1;
+				}
+			}
+			
+			let nand_outputs = 14-ctr_mod.count_ones();
+			pulses[1] += nand_updates * nand_outputs; // From NAND to FFs (ignored) + inverter
+			pulses[0] += nand_updates; // From inverter to final NAND
+			pulses[1] += nand_updates; // From final NAND to output
+			
+			*val += 1;
 		}
 	}
 	
-	println!("part 1: {}", lo_pulses * hi_pulses);
+	println!("part 1: {}", pulses[0] * pulses[1]);
 	
-	// Reset
-	for node in &mut nodes {
-		node.st = false;
-		if let NodeType::Conjunction(ctr, _max) = &mut node.ty {
-			*ctr = 0;
-		}
-	}
-	
-	let mut presses = 0;
-	loop {
-		presses += 1;
-		if let SimResult::OutputTriggered = press_button(&mut nodes) {
-			break
-		}
-		if presses % 10_000_000 == 0 {
-			println!("{}M presses", presses/1_000_000);
-		}
-	}
-	
-	println!("part 2: {}", presses);
+	// We assume the periods of the counters are coprime.
+	// The output pulses low when all counters pulse hi in one step, so:
+	println!("part 2: {}", ctr_moduli.iter().map(|n| *n as u64).product::<u64>());
 }
