@@ -105,16 +105,16 @@ fn main() {
 	
 	for node in nodes.values() {
 		let node = node.borrow();
-		for id2 in node.out.clone() {
-			if let Some(mut node2) = nodes.get(&id2).map(|n| n.borrow_mut()) {
-				if let NodeType::Conjunction(_ctr, max) = &mut node2.ty {
-					*max += 1;
-				}
+		for id2 in &node.out {
+			let mut node2 = nodes.get(&id2).map(|n| n.borrow_mut()).unwrap();
+			if let NodeType::Conjunction(_ctr, max) = &mut node2.ty {
+				*max += 1;
 			}
 		}
 	}
 	
-	let node_ids: Vec<u16> = nodes.keys().copied().collect();
+	let mut node_ids: Vec<u16> = nodes.keys().copied().collect();
+	node_ids.sort();
 	let mut nodes = {
 		let mut nodes_vec = vec![];
 		for id in &node_ids {
